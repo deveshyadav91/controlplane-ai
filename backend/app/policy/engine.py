@@ -16,164 +16,166 @@ Possible decisions:
 
 from typing import Dict, Any
 
-
 def make_decision(
-    application: str,
-    overall_risk: float,
-    breakdown: Dict[str, float],
-) -> Dict[str, Any]:
+    application,
+    privacy_risk,
+    safety_risk,
+    hallucination_risk,
+    bias_risk,
+    evidence_status=None,
+    evidence_risk=0.0,
+):
     """
-    Determine the appropriate governance intervention.
+    Central policy decision engine.
 
-    Priority:
-        1. Critical privacy/safety -> BLOCK
-        2. Severe hallucination/bias -> HUMAN_REVIEW
-        3. Moderate risks -> EDIT
-        4. Low risk -> ALLOW
+    Returns:
+        {
+            "decision": "ALLOW" | "EDIT" | "BLOCK" | "HUMAN_REVIEW",
+            "policy": str,
+            "reason": str
+        }
     """
 
-    privacy = float(breakdown.get("privacy", 0.0))
-    safety = float(breakdown.get("safety", 0.0))
-    hallucination = float(
-        breakdown.get("hallucination", 0.0)
+    # ---------------------------------------------------------
+    # Overall risk
+    # ---------------------------------------------------------
+
+    overall_risk = max(
+        privacy_risk,
+        safety_risk,
+        
+        bias_risk,
+        evidence_risk,
     )
-    bias = float(breakdown.get("bias", 0.0))
 
-    overall_risk = float(overall_risk)
+    # ---------------------------------------------------------
+    # Policy
+    # ---------------------------------------------------------
 
-    # --------------------------------------------------
-    # 1. CRITICAL SECURITY / SAFETY
-    # --------------------------------------------------
+    policy_map = {
+        "customer_support": "Customer Support",
+        "internal_assistant": "Internal Assistant",
+        "decision_support": "Decision Support",
+    }
 
-    if privacy >= 0.90:
+    policy = policy_map.get(
+        application,
+        "Default"
+    )
+
+    # ---------------------------------------------------------
+    # HARD BLOCK CONDITIONS
+    # ---------------------------------------------------------
+
+    if privacy_risk >= 0.85:
         return {
             "decision": "BLOCK",
-            "policy": application,
+            "policy": policy,
             "reason": (
-                f"Critical privacy risk detected "
-                f"({privacy:.2f})"
+                f"Critical privacy risk "
+                f"({privacy_risk:.2f})"
             ),
         }
 
-    if safety >= 0.90:
+    if safety_risk >= 0.85:
         return {
             "decision": "BLOCK",
-            "policy": application,
+            "policy": policy,
             "reason": (
-                f"Critical safety risk detected "
-                f"({safety:.2f})"
+                f"Critical safety risk "
+                f"({safety_risk:.2f})"
             ),
         }
 
-    # --------------------------------------------------
-    # 2. HIGH HALLUCINATION / BIAS
-    # --------------------------------------------------
+    # ---------------------------------------------------------
+    # EVIDENCE CONTRADICTION
+    # ---------------------------------------------------------
 
-    if hallucination >= 0.80:
+    if evidence_status == "CONTRADICTED":
         return {
-            "decision": "HUMAN_REVIEW",
-            "policy": application,
+            "decision": "BLOCK",
+            "policy": policy,
             "reason": (
-                f"High hallucination risk "
-                f"({hallucination:.2f}) requires review"
+                "AI response contradicts trusted "
+                "organizational evidence."
             ),
         }
 
-    if bias >= 0.80:
+    # ---------------------------------------------------------
+    # HIGH HALLUCINATION
+    # ---------------------------------------------------------
+
+    if hallucination_risk >= 0.85:
         return {
             "decision": "HUMAN_REVIEW",
-            "policy": application,
+            "policy": policy,
+            "reason": (
+                f"High hallucination/evidence risk "
+                f"({hallucination_risk:.2f})"
+            ),
+        }
+
+    # ---------------------------------------------------------
+    # HIGH BIAS
+    # ---------------------------------------------------------
+
+    if bias_risk >= 0.85:
+        return {
+            "decision": "HUMAN_REVIEW",
+            "policy": policy,
             "reason": (
                 f"High bias risk "
-                f"({bias:.2f}) requires review"
+                f"({bias_risk:.2f})"
             ),
         }
 
-    # --------------------------------------------------
-    # 3. MODERATE PRIVACY / SAFETY
-    # --------------------------------------------------
+    # ---------------------------------------------------------
+    # MODERATE RISKS
+    # ---------------------------------------------------------
 
-    if privacy >= 0.40:
+    if (
+        privacy_risk >= 0.50
+        or safety_risk >= 0.50
+        or bias_risk >= 0.50
+    ):
         return {
             "decision": "EDIT",
-            "policy": application,
+            "policy": policy,
             "reason": (
-                f"Privacy risk detected "
-                f"({privacy:.2f}); response redaction required"
-            ),
-        }
-
-    if safety >= 0.40:
-        return {
-            "decision": "EDIT",
-            "policy": application,
-            "reason": (
-                f"Safety risk detected "
-                f"({safety:.2f}); response requires filtering"
-            ),
-        }
-
-    # --------------------------------------------------
-    # 4. APPLICATION-SPECIFIC GOVERNANCE
-    # --------------------------------------------------
-
-    if application == "decision_support":
-
-        if hallucination >= 0.50 or bias >= 0.50:
-            return {
-                "decision": "HUMAN_REVIEW",
-                "policy": application,
-                "reason": (
-                    "Decision-support output requires "
-                    "human verification"
-                ),
-            }
-
-    if application == "internal_assistant":
-
-        if overall_risk >= 0.60:
-            return {
-                "decision": "HUMAN_REVIEW",
-                "policy": application,
-                "reason": (
-                    f"Elevated internal-assistant risk "
-                    f"({overall_risk:.2f})"
-                ),
-            }
-
-    # --------------------------------------------------
-    # 5. OVERALL RISK
-    # --------------------------------------------------
-
-    if overall_risk >= 0.75:
-        return {
-            "decision": "HUMAN_REVIEW",
-            "policy": application,
-            "reason": (
-                f"Overall risk is high "
+                f"Moderate governance risk "
                 f"({overall_risk:.2f})"
             ),
         }
 
-    if overall_risk >= 0.40:
+    # ---------------------------------------------------------
+    # UNCERTAIN EVIDENCE
+    # ---------------------------------------------------------
+
+    if evidence_status in (
+        "UNCERTAIN",
+        "UNVERIFIED",
+        "NO_EVIDENCE",
+    ):
         return {
             "decision": "EDIT",
-            "policy": application,
+            "policy": policy,
             "reason": (
-                f"Moderate overall risk "
-                f"({overall_risk:.2f}); response edited"
+                "Response contains claims that "
+                "could not be sufficiently verified "
+                "against trusted evidence."
             ),
         }
 
-    # --------------------------------------------------
-    # 6. SAFE
-    # --------------------------------------------------
+    # ---------------------------------------------------------
+    # ALLOW
+    # ---------------------------------------------------------
 
     return {
         "decision": "ALLOW",
-        "policy": application,
+        "policy": policy,
         "reason": (
-            f"Overall risk = {overall_risk:.2f}"
+            f"Overall risk = "
+            f"{overall_risk:.2f}"
         ),
     }
 
