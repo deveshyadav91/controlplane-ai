@@ -283,14 +283,22 @@ def chat(request: ChatRequest):
 
     decision = make_decision(
         application=request.application,
-        overall_risk=risk_result.overall_risk,
-        breakdown=risk_result.breakdown,
-        evidence_status=evidence_result.get(
+
+        privacy_risk=guard_results["privacy"]["risk"],
+
+        safety_risk=guard_results["safety"]["risk"],
+
+        hallucination_risk=guard_results["evidence"]["risk"],
+
+        bias_risk=guard_results["bias"]["risk"],
+
+        evidence_status=guard_results["evidence"].get(
             "status",
-            "UNKNOWN"
+            "UNVERIFIED"
         ),
-        evidence_contradiction=evidence_result.get(
-            "contradiction",
+
+        evidence_risk=guard_results["evidence"].get(
+            "risk",
             0.0
         ),
     )
@@ -298,47 +306,54 @@ def chat(request: ChatRequest):
 
 
 
-    # ========================================================
-    # 8. INTERVENTION
-    # ========================================================
+    
+    # ==========================================
+    # 8. ADAPTIVE INTERVENTION
+    # ==========================================
 
     final_response = response
 
+    decision_type = decision["decision"]
 
-    # --------------------------------------------------------
-    # EDIT
-    # --------------------------------------------------------
+    if decision_type == "ALLOW":
 
-    if decision["decision"] == "EDIT":
+        # No intervention required.
+        final_response = response
 
+
+    elif decision_type == "EDIT":
+
+        # Privacy guard may provide a redacted response.
+        # If no redaction occurred, preserve the original.
+        redacted = privacy_result.get(
+            "redacted_text",
+            response
+        )
+
+        final_response = redacted
+
+
+    elif decision_type == "HUMAN_REVIEW":
+
+        # Keep the response visible but clearly mark
+        # that governance requires human verification.
         final_response = (
-            privacy_result["redacted_text"]
+            "[HUMAN REVIEW REQUIRED]\n\n"
+            + privacy_result.get(
+                "redacted_text",
+                response
+            )
         )
 
 
-    # --------------------------------------------------------
-    # HUMAN REVIEW
-    # --------------------------------------------------------
-
-    elif decision["decision"] == "HUMAN_REVIEW":
-
-        final_response = (
-            "This response requires human review "
-            "before it can be delivered."
-        )
-
-
-    # --------------------------------------------------------
-    # BLOCK
-    # --------------------------------------------------------
-
-    elif decision["decision"] == "BLOCK":
+    elif decision_type == "BLOCK":
 
         final_response = (
             "Response blocked by "
             "ControlPlane.ai due to "
             "policy violation."
         )
+
 
 
     # ========================================================
